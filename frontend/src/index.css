@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body { @apply m-0 min-w-[320px] bg-slate-50 font-sans text-slate-800 antialiased; }
+  button, input, textarea { font: inherit; }
+}
+
+@layer components {
+  .panel { @apply rounded-2xl border border-slate-200 bg-white shadow-sm; }
+  .field-label { @apply mb-1.5 block text-sm font-medium text-slate-700; }
+  .field-input { @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-600 focus:ring-2 focus:ring-teal-100; }
+  .btn-primary { @apply inline-flex items-center justify-center rounded-xl bg-teal-700 px-4 py-2.5 font-semibold text-white transition hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60; }
+  .btn-secondary { @apply inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2; }
+}

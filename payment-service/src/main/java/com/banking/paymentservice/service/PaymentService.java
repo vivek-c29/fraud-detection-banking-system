@@ -2,6 +2,7 @@ package com.banking.paymentservice.service;
 
 import com.banking.paymentservice.dto.CreatePaymentRequest;
 import com.banking.paymentservice.dto.PaymentOrderResponse;
+import com.banking.paymentservice.dto.VerifyPaymentRequest;
 import com.banking.paymentservice.entity.Payment;
 import com.banking.paymentservice.entity.PaymentStatus;
 import com.banking.paymentservice.repository.PaymentRepository;
@@ -77,9 +78,59 @@ public class PaymentService {
                 razorpayOrder.get("id").toString(),
                 request.getAmount(),
                 "INR",
-                keyId,
-                "CREATED"
+                "CREATED",
+                keyId
         );
+    }
+
+    /**
+     * Verifies the signature returned by Checkout before publishing the deposit event.
+     * This supports local/test checkout where Razorpay cannot call a localhost webhook.
+     */
+    @Transactional
+    public PaymentOrderResponse verifyPayment(VerifyPaymentRequest request) throws RazorpayException {
+        Payment payment = paymentRepository.findByRazorpayOrderId(request.getRazorpayOrderId())
+                .orElseThrow(() -> new RuntimeException("Payment not found for order: " + request.getRazorpayOrderId()));
+
+        if (payment.getStatus() == PaymentStatus.COMPLETED) {
+            return mapToResponse(payment);
+        }
+        if (payment.getStatus() != PaymentStatus.CREATED && payment.getStatus() != PaymentStatus.PENDING) {
+            throw new RuntimeException("Payment cannot be verified in status: " + payment.getStatus());
+        }
+
+        JSONObject attributes = new JSONObject();
+        attributes.put("razorpay_order_id", request.getRazorpayOrderId());
+        attributes.put("razorpay_payment_id", request.getRazorpayPaymentId());
+        attributes.put("razorpay_signature", request.getRazorpaySignature());
+        if (!Utils.verifyPaymentSignature(attributes, keySecret)) {
+            throw new SecurityException("Invalid Razorpay payment signature");
+        }
+
+        completePayment(payment, request.getRazorpayPaymentId());
+        return mapToResponse(payment);
+    }
+
+    private PaymentOrderResponse mapToResponse(Payment payment) {
+        return new PaymentOrderResponse(payment.getId(), payment.getRazorpayOrderId(), payment.getAmount(),
+                payment.getCurrency(), payment.getStatus().name(), keyId);
+    }
+
+    private void completePayment(Payment payment, String razorpayPaymentId) {
+        if (payment.getStatus() == PaymentStatus.COMPLETED) {
+            return;
+        }
+        payment.setRazorpayPaymentId(razorpayPaymentId);
+        payment.setStatus(PaymentStatus.COMPLETED);
+        paymentRepository.save(payment);
+
+        Map<String, Object> event = new HashMap<>();
+        event.put("paymentId", payment.getId());
+        event.put("accountNumber", payment.getAccountNumber());
+        event.put("amount", payment.getAmount());
+        event.put("razorpayPaymentId", razorpayPaymentId);
+        kafkaTemplate.send(PAYMENT_COMPLETED_TOPIC, payment.getId(), event);
+        log.info("Payment completed and published to Kafka: paymentId={}, orderId={}", payment.getId(), payment.getRazorpayOrderId());
     }
 
     /**
@@ -143,19 +194,7 @@ public class PaymentService {
                 return;
             }
 
-            payment.setRazorpayPaymentId(paymentId);
-            payment.setStatus(PaymentStatus.COMPLETED);
-            paymentRepository.save(payment);
-
-            // Publish payment completed event to Kafka
-            Map<String, Object> event = new HashMap<>();
-            event.put("paymentId", payment.getId());
-            event.put("accountNumber", payment.getAccountNumber());
-            event.put("amount", payment.getAmount());
-            event.put("razorpayPaymentId", paymentId);
-
-            kafkaTemplate.send(PAYMENT_COMPLETED_TOPIC, payment.getId(), event);
-            log.info("Payment completed and published to Kafka: paymentId={}, orderId={}", payment.getId(), orderId);
+            completePayment(payment, paymentId);
 
         } catch (Exception e) {
             log.error("Error while handling payment success webhook: {}", e.getMessage());

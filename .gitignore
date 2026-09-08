@@ -201,7 +201,13 @@ README.html
 .exercism
 
 .env
+frontend/node_modules/
+frontend/dist/
+frontend/.env
 # Ignore Spring Boot property files with credentials
 **/src/main/resources/application.yml
 **/src/main/resources/application.yaml
 **/src/main/resources/*.properties
+
+## Ignore IDE files
+.idea/

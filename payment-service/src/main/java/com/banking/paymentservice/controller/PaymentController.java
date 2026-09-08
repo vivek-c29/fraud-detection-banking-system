@@ -2,6 +2,7 @@ package com.banking.paymentservice.controller;
 
 import com.banking.paymentservice.dto.CreatePaymentRequest;
 import com.banking.paymentservice.dto.PaymentOrderResponse;
+import com.banking.paymentservice.dto.VerifyPaymentRequest;
 import com.banking.paymentservice.service.PaymentService;
 import com.razorpay.RazorpayException;
 import jakarta.validation.Valid;
@@ -25,6 +26,13 @@ public class PaymentController {
     ) throws RazorpayException {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(paymentService.createOrder(request));
+    }
+
+    @PostMapping("/verify")
+    public ResponseEntity<PaymentOrderResponse> verifyPayment(
+            @Valid @RequestBody VerifyPaymentRequest request
+    ) throws RazorpayException {
+        return ResponseEntity.ok(paymentService.verifyPayment(request));
     }
 
     /**
