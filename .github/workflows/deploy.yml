@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - Fraud Detection Banking System
+name: CI/CD - Deploy Banking Backend
 
 on:
   push:
@@ -6,121 +6,223 @@ on:
       - main
 
 permissions:
-  id-token: write   # Required for requesting the AWS OIDC JWT token
-  contents: read    # Required for actions/checkout
+  id-token: write
+  contents: read
 
 jobs:
-  # STAGE 1: BUILD & TEST MICROSERVICES
-  build-and-test:
-    name: Build & Unit Test
+
+  # BUILD AND PUSH ALL 6 MICROSERVICES
+
+  build-and-push:
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service:
-          - account-service
-          - transaction-service
-          - payment-service
-          - fraud-detection-service
-          - notification-service
-          - API-gateway
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
 
     steps:
-      - name: Checkout Code
+      # 1. Checkout repository
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'maven'
 
-      - name: Compile and Test Services
+      # 2. Generate Git SHA tag
+
+      - name: Generate image tag
+        id: meta
         run: |
-          cd ${{ matrix.service }}
-          mvn clean test -DskipTests=false
+          IMAGE_TAG="${GITHUB_SHA::7}"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Using image tag: $IMAGE_TAG"
 
-  # STAGE 2: BUILD DOCKER IMAGES & PUSH TO ECR
-  build-and-push-ecr:
-    name: Build & Push Docker Images to AWS ECR
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service:
-          - account-service
-          - transaction-service
-          - payment-service
-          - fraud-detection-service
-          - notification-service
-          - API-gateway
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'maven'
+      # 3. Configure AWS using OIDC
 
-      - name: Build JAR for Service
-        run: |
-          cd ${{ matrix.service }}
-          mvn clean package -DskipTests
-          
-      # Authenticate securely using AWS OIDC Role Assumption
-      - name: Configure AWS Credentials via OIDC Role
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Log in to AWS ECR
-        id: login-ecr
+
+      # 4. Login to Amazon ECR
+
+      - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Extract Metadata & Commit SHA Tag
-        id: meta
+
+      # 5. Build & Push Account Service
+
+      - name: Build and push account-service
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
         run: |
-          echo "COMMIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
+          docker build \
+            -t $REGISTRY/account-service:$IMAGE_TAG \
+            ./account-service
 
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./${{ matrix.service }}
-          push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.service }}:${{ env.COMMIT_SHA }}
+          docker push \
+            $REGISTRY/account-service:$IMAGE_TAG
 
-  # STAGE 3: DEPLOY TO AWS EC2 VIA SSH
-  deploy-to-ec2:
-    name: Deploy to EC2 Instance
-    needs: build-and-push-ecr
+
+      # 6. Build & Push Transaction Service
+
+      - name: Build and push transaction-service
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          docker build \
+            -t $REGISTRY/transaction-service:$IMAGE_TAG \
+            ./transaction-service
+
+          docker push \
+            $REGISTRY/transaction-service:$IMAGE_TAG
+
+
+      # 7. Build & Push Fraud Detection Service
+
+      - name: Build and push fraud-detection-service
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          docker build \
+            -t $REGISTRY/fraud-detection-service:$IMAGE_TAG \
+            ./fraud-detection-service
+
+          docker push \
+            $REGISTRY/fraud-detection-service:$IMAGE_TAG
+
+
+      # 8. Build & Push Payment Service
+
+      - name: Build and push payment-service
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          docker build \
+            -t $REGISTRY/payment-service:$IMAGE_TAG \
+            ./payment-service
+
+          docker push \
+            $REGISTRY/payment-service:$IMAGE_TAG
+
+
+      # 9. Build & Push Notification Service
+
+      - name: Build and push notification-service
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          docker build \
+            -t $REGISTRY/notification-service:$IMAGE_TAG \
+            ./notification-service
+
+          docker push \
+            $REGISTRY/notification-service:$IMAGE_TAG
+
+
+      # 10. Build & Push API Gateway
+
+      - name: Build and push api-gateway
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          docker build \
+            -t $REGISTRY/api-gateway:$IMAGE_TAG \
+            ./api-gateway
+
+          docker push \
+            $REGISTRY/api-gateway:$IMAGE_TAG
+
+
+  # DEPLOY TO EC2
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-and-push
     runs-on: ubuntu-latest
+
     steps:
-      - name: Trigger Remote Deployment over SSH
-        uses: appleboy/ssh-action@v1.0.3
+
+      - name: Deploy application to EC2
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE_TAG
           script: |
-            set -e
-            echo "==> Navigating to application directory..."
+
+            # Move to application directory
             cd ~/app
 
-            echo "==> Authenticating Docker with AWS ECR..."
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+            # Show deployment version
+            echo "Deploying version: $IMAGE_TAG"
 
-            echo "==> Pulling updated Docker images from ECR..."
-            docker compose pull
 
-            echo "==> Restarting container services gracefully..."
-            docker compose up -d --remove-orphans
+            # ------------------------------------------------
+            # Authenticate Docker with ECR
+            #
+            # EC2 IAM Role provides AWS credentials.
+            # No AWS access keys are stored in GitHub.
+            # ------------------------------------------------
 
-            echo "==> Pruning unused dangling images to free disk space..."
+            aws ecr get-login-password \
+              --region ap-south-1 | \
+              docker login \
+              --username AWS \
+              --password-stdin \
+              ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+
+            # ------------------------------------------------
+            # Pull the new application images
+            # ------------------------------------------------
+
+            IMAGE_TAG=$IMAGE_TAG docker compose pull \
+              account-service \
+              transaction-service \
+              fraud-detection-service \
+              payment-service \
+              notification-service \
+              api-gateway
+
+
+            # ------------------------------------------------
+            # Start/recreate only the application services
+            # ------------------------------------------------
+
+            IMAGE_TAG=$IMAGE_TAG docker compose up -d \
+              account-service \
+              transaction-service \
+              fraud-detection-service \
+              payment-service \
+              notification-service \
+              api-gateway
+
+
+            # ------------------------------------------------
+            # Remove dangling Docker images
+            #
+            # Safe cleanup:
+            # removes unused intermediate/dangling images,
+            # but does NOT remove running containers or volumes.
+            # ------------------------------------------------
+
             docker image prune -f
 
-            echo "==> Deployment Completed Successfully!"
+
+            # ------------------------------------------------
+            # Show running containers
+            # ------------------------------------------------
+
+            docker compose ps
