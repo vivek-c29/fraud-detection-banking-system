@@ -14,19 +14,30 @@ jobs:
   build-and-test:
     name: Build & Unit Test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - account-service
+          - transaction-service
+          - payment-service
+          - fraud-detection-service
+          - notification-service
+          - API-gateway
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Compile and Test All Services
+      - name: Compile and Test Services
         run: |
+          cd ${{ matrix.service }}
           mvn clean test -DskipTests=false
 
   # STAGE 2: BUILD DOCKER IMAGES & PUSH TO ECR
@@ -47,17 +58,18 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
 
       - name: Build JAR for Service
         run: |
-          mvn clean package -DskipTests -pl ${{ matrix.service }} -am
-
+          cd ${{ matrix.service }}
+          mvn clean package -DskipTests
+          
       # Authenticate securely using AWS OIDC Role Assumption
       - name: Configure AWS Credentials via OIDC Role
         uses: aws-actions/configure-aws-credentials@v4
@@ -73,7 +85,6 @@ jobs:
         id: meta
         run: |
           echo "COMMIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
-          echo "REGISTRY=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_ENV
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
@@ -81,7 +92,6 @@ jobs:
           context: ./${{ matrix.service }}
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.service }}:latest
             ${{ steps.login-ecr.outputs.registry }}/${{ matrix.service }}:${{ env.COMMIT_SHA }}
 
   # STAGE 3: DEPLOY TO AWS EC2 VIA SSH
