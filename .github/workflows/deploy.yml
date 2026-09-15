@@ -136,7 +136,7 @@ jobs:
         run: |
           docker build \
             -t $REGISTRY/api-gateway:$IMAGE_TAG \
-            ./api-gateway
+            ./API-gateway
 
           docker push \
             $REGISTRY/api-gateway:$IMAGE_TAG
