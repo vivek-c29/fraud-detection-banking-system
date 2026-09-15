@@ -1,0 +1,116 @@
+name: CI/CD Pipeline - Fraud Detection Banking System
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write   # Required for requesting the AWS OIDC JWT token
+  contents: read    # Required for actions/checkout
+
+jobs:
+  # STAGE 1: BUILD & TEST MICROSERVICES
+  build-and-test:
+    name: Build & Unit Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Compile and Test All Services
+        run: |
+          mvn clean test -DskipTests=false
+
+  # STAGE 2: BUILD DOCKER IMAGES & PUSH TO ECR
+  build-and-push-ecr:
+    name: Build & Push Docker Images to AWS ECR
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - account-service
+          - transaction-service
+          - payment-service
+          - fraud-detection-service
+          - notification-service
+          - API-gateway
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build JAR for Service
+        run: |
+          mvn clean package -DskipTests -pl ${{ matrix.service }} -am
+
+      # Authenticate securely using AWS OIDC Role Assumption
+      - name: Configure AWS Credentials via OIDC Role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to AWS ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract Metadata & Commit SHA Tag
+        id: meta
+        run: |
+          echo "COMMIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
+          echo "REGISTRY=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_ENV
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.service }}:latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.service }}:${{ env.COMMIT_SHA }}
+
+  # STAGE 3: DEPLOY TO AWS EC2 VIA SSH
+  deploy-to-ec2:
+    name: Deploy to EC2 Instance
+    needs: build-and-push-ecr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Remote Deployment over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            echo "==> Navigating to application directory..."
+            cd ~/app
+
+            echo "==> Authenticating Docker with AWS ECR..."
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+            echo "==> Pulling updated Docker images from ECR..."
+            docker compose pull
+
+            echo "==> Restarting container services gracefully..."
+            docker compose up -d --remove-orphans
+
+            echo "==> Pruning unused dangling images to free disk space..."
+            docker image prune -f
+
+            echo "==> Deployment Completed Successfully!"
