@@ -13,10 +13,13 @@ export class ApiError extends Error {
 export async function request(path, options = {}) {
   let response
 
+  const token = localStorage.getItem('token')
+
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       headers: {
         Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.body
           ? { 'Content-Type': 'application/json' }
           : {}),

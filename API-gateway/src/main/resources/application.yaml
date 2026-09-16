@@ -39,6 +39,11 @@ spring:
 
           routes:
 
+            - id: auth-service
+              uri: http://auth-service:8086
+              predicates:
+                - Path=/api/v1/auth/**
+
             - id: account-service
               uri: http://account-service:8081
               predicates:

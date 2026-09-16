@@ -142,6 +142,21 @@ jobs:
             $REGISTRY/api-gateway:$IMAGE_TAG
 
 
+      # 11. Build & Push Auth Service
+
+      - name: Build and push auth-service
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          docker build \
+            -t $REGISTRY/auth-service:$IMAGE_TAG \
+            ./auth-service
+
+          docker push \
+            $REGISTRY/auth-service:$IMAGE_TAG
+
+
   # DEPLOY TO EC2
 
   deploy:

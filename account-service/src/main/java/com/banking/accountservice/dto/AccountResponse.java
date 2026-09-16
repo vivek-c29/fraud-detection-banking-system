@@ -16,6 +16,7 @@ public class AccountResponse {
 
     private String id;
     private String accountNumber;
+    private String userId;
     private String accountHolderName;
     private String phone;
     private String email;

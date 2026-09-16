@@ -21,6 +21,8 @@ public class CreateAccountRequest {
         @NotBlank(message = "Account holder name is required")
         private String accountHolderName;
 
+        private String userId;
+
         @NotBlank(message = "Phone number is required")
         private String phone;
 

@@ -35,6 +35,7 @@ public class AccountService {
         AccountResponse accountResponse = new AccountResponse();
         accountResponse.setId(account.getId());
         accountResponse.setAccountNumber(account.getAccountNumber());
+        accountResponse.setUserId(account.getUserId());
         accountResponse.setAccountHolderName(account.getAccountHolderName());
         accountResponse.setPhone(account.getPhone());
         accountResponse.setEmail(account.getEmail());
@@ -54,6 +55,7 @@ public class AccountService {
         }
 
         Account account = new Account();
+        account.setUserId(request.getUserId());
         account.setAccountHolderName(request.getAccountHolderName());
         account.setPhone(request.getPhone());
         account.setEmail(request.getEmail());
@@ -76,6 +78,12 @@ public class AccountService {
     public AccountResponse getAccount(String accountNumber) {
         Account account = accountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new RuntimeException("Account not found"));
+        return mapToResponse(account);
+    }
+
+    public AccountResponse getAccountByUserId(String userId) {
+        Account account = accountRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Account not found for user: " + userId));
         return mapToResponse(account);
     }
 

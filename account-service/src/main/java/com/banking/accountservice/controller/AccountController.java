@@ -37,6 +37,14 @@ public class AccountController {
                 .body(accountService.getAccount(accountNumber));
     }
 
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<AccountResponse> getAccountByUserId(
+            @PathVariable String userId
+    ){
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(accountService.getAccountByUserId(userId));
+    }
+
     @GetMapping("/{accountNumber}/balance")
     public ResponseEntity<BigDecimal> getBalance(
             @PathVariable String accountNumber
